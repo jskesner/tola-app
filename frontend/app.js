@@ -197,7 +197,7 @@ async function selectActiveTripUI() {
 
 function changeActiveTrip(tripId) {
     const normalizedTripId = String(tripId).trim();
-    if (!/^\d+$/.test(normalizedTripId)) {
+    if (!/^[A-Za-z0-9_-]+$/.test(normalizedTripId)) {
         showToast("Invalid trip selected.", "error");
         return;
     }
@@ -797,7 +797,7 @@ async function handleAddPackingItem(e) {
 function triggerPdfExport() {
     const pf = document.getElementById('pdfPrinterFriendly').checked;
     const tripId = String(activeTripId || '').trim();
-    if (!/^\d+$/.test(tripId)) {
+    if (!/^[A-Za-z0-9_-]+$/.test(tripId)) {
         showToast("Invalid trip selected.", "error");
         return;
     }
