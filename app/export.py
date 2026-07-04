@@ -1,6 +1,7 @@
 import datetime
 import json
 import os
+import tempfile
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
@@ -111,9 +112,12 @@ def generate_pdf(trip_id: str, printer_friendly: bool = False) -> bytes:
 
     conn.close()
 
-    pdf_filename = f"packing_list_{trip_id}.pdf"
+    temp_pdf = tempfile.NamedTemporaryFile(prefix="packing_list_", suffix=".pdf", delete=False)
+    temp_pdf_path = temp_pdf.name
+    temp_pdf.close()
+
     doc = SimpleDocTemplate(
-        pdf_filename,
+        temp_pdf_path,
         pagesize=letter,
         leftMargin=54,
         rightMargin=54,
@@ -280,11 +284,11 @@ def generate_pdf(trip_id: str, printer_friendly: bool = False) -> bytes:
 
     doc.build(story, canvasmaker=canvasmaker_factory)
 
-    with open(pdf_filename, "rb") as f:
+    with open(temp_pdf_path, "rb") as f:
         pdf_data = f.read()
 
     try:
-        os.remove(pdf_filename)
+        os.remove(temp_pdf_path)
     except Exception:
         pass
 
