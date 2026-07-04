@@ -92,7 +92,7 @@ flowchart TD
 
 ### 4. Traveler Style & Product Preferences
 To support tailored clothing styles and personal care needs:
-* **Style/Item Preference Tags**: The conversational onboarding assistant asks travelers about their preferred clothing styles (feminine, masculine, or unisex style preferences) or personal care needs. Under the hood, the assistant translates these responses into standardized tags stored in the `trips` table (e.g. `feminine-wear`, `masculine-wear`, `unisex-wear`, `makeup`, `skincare`, `hair-styling`, `shaving-kit`, `menstrual-care`, `contact-lenses`, `sun-defense`, `bug-defense`, `dental-care`, `deodorant`, `personal-scent`).
+* **Style/Item Preference Tags**: The conversational onboarding assistant asks travelers about their preferred clothing styles (feminine, masculine, or unisex style preferences) or personal care needs. Under the hood, the assistant translates these responses into standardized tags stored in the `travelers` table (e.g. `feminine-wear`, `masculine-wear`, `unisex-wear`, `makeup`, `skincare`, `hair-styling`, `shaving-kit`, `menstrual-care`, `contact-lenses`, `sun-defense`, `bug-defense`, `dental-care`, `deodorant`, `personal-scent`).
 * **Tailored Clothing Cuts**: The `ActivityGearPlanner` agent consumes these tags to align clothing and footwear suggestions with the traveler's preferred style cut.
 * **Dynamic Toiletries & Hygiene Injection**: The system evaluates these tags to inject matching items dynamically into the packing checklist:
   * `makeup` -> `Makeup / Cosmetics Kit` (Toiletries, Public)
@@ -204,7 +204,7 @@ To optimize reasoning performance, preserve PHI, and simplify codebase maintenan
 ## 📂 Project Structure
 
 ```
-./
+capstone-project/development/
 ├── app/                        # Backend Application
 │   ├── agent.py                # ADK multi-agent orchestration, obfuscator, and legality warnings
 │   ├── database.py             # SQLite WAL-mode connections, traveler migrations, and zlib compression
@@ -216,9 +216,16 @@ To optimize reasoning performance, preserve PHI, and simplify codebase maintenan
 │   ├── app.js                  # Vanilla JS SPA state management, UI, and API fetch handlers
 │   ├── index.html              # HTML5 responsive user interface structure
 │   └── styles.css              # Custom Vanilla CSS design system (sand/sage/sky themes)
+├── tests/                      # Automated Verification Test Suite
+│   ├── test_security.py        # 15 Security, privacy, and functionality test cases
+│   ├── unit/                   # Unit test cases
+│   │   ├── test_location_mapping.py # Tests for location canonicalization and fallback engines
+│   │   └── test_tools.py       # Tests for medication, visa, and power grid tools
+│   └── integration/            # Agent orchestrator integration tests
 ├── Dockerfile                  # Application deployment container manifest
 ├── docker-compose.yml          # Containerized local orchestration service config
-└── pyproject.toml              # UV python dependencies and project configuration
+├── pyproject.toml              # UV python dependencies and project configuration
+└── uv.lock                     # Lockfile for reproducible environment installations
 ```
 
 ---
@@ -305,7 +312,24 @@ GEMINI_API_KEY="your-google-ai-studio-api-key"
 uv sync
 ```
 
-### 3. Start the Application
+### 3. Run Automated Tests
+By default, the test suite runs in **mock mode** using local fallbacks and stubs (making **zero live API calls** and running in under 6 seconds).
+
+To run tests in mock mode:
+```bash
+uv run pytest
+```
+
+To run integration tests in **live mode** against the live Gemini API (useful when verifying prompt engineering or agent connection logic):
+```bash
+# Run using the CLI flag
+uv run pytest --live
+
+# Or by setting the environment variable
+GEMINI_LIVE_TESTING=true uv run pytest
+```
+
+### 4. Start the Application
 Start the local development server:
 ```bash
 uv run fastapi dev app/fast_api_app.py --port 8000
@@ -336,7 +360,7 @@ You can build and deploy the app container using Docker or Docker Compose.
    *Note: If mapping to a different host port, modify the `-p <host_port>:8000` mapping accordingly.*
 
 ### Option B: Docker Compose (Recommended)
-Orchestrate local running instances effortlessly:
+Orchestrate local running instances effortlessly (the runner automatically resolves the `GEMINI_API_KEY` from your local `.env` file):
 ```bash
 docker compose up -d
 ```
@@ -344,4 +368,3 @@ Stop the running service container with:
 ```bash
 docker compose down
 ```
-# tola-app

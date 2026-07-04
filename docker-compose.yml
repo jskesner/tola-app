@@ -12,6 +12,5 @@ services:
       - ./data:/code/data
       - ./logs:/code/logs
     environment:
-      - ADMIN_PASSWORD=SecureAdminPass123!
-      - GOOGLE_API_KEY=your-gemini-api-key
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
     restart: unless-stopped
