@@ -196,7 +196,12 @@ async function selectActiveTripUI() {
 }
 
 function changeActiveTrip(tripId) {
-    activeTripId = tripId;
+    const normalizedTripId = String(tripId).trim();
+    if (!/^\d+$/.test(normalizedTripId)) {
+        showToast("Invalid trip selected.", "error");
+        return;
+    }
+    activeTripId = normalizedTripId;
     selectActiveTripUI();
 }
 
@@ -791,7 +796,12 @@ async function handleAddPackingItem(e) {
 // PDF Downloader
 function triggerPdfExport() {
     const pf = document.getElementById('pdfPrinterFriendly').checked;
-    let url = `/api/trips/${activeTripId}/export/pdf`;
+    const tripId = String(activeTripId || '').trim();
+    if (!/^\d+$/.test(tripId)) {
+        showToast("Invalid trip selected.", "error");
+        return;
+    }
+    let url = `/api/trips/${encodeURIComponent(tripId)}/export/pdf`;
     if (pf) {
         url += `?printer_friendly=true`;
     }
