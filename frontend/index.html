@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="sand">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tola — Travel Packing Checklist</title>
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Main Style sheet -->
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <!-- Top Global Header -->
+    <header class="glass-nav">
+        <div class="logo">
+            <i class="fa-solid fa-compass compass-pulse"></i>
+            <span>Tola</span>
+        </div>
+        <div class="header-actions">
+            <!-- Theme selector -->
+            <select id="themeSelect" onchange="changeTheme(this.value)">
+                <option value="sand">Sand Theme</option>
+                <option value="sage">Sage Theme</option>
+                <option value="stone">Stone Theme</option>
+                <option value="clay">Clay Theme</option>
+                <option value="fjord">Fjord Theme</option>
+            </select>
+            <!-- Scheme selector -->
+            <select id="schemeSelect" onchange="changeColorScheme(this.value)">
+                <option value="light">☀️ Light</option>
+                <option value="dark">🌙 Dark</option>
+                <option value="system">💻 System</option>
+            </select>
+        </div>
+    </header>
+
+    <main class="main-container">
+        <!-- Split View Layout -->
+        <div id="workspaceGrid" class="workspace-grid onboarding-active">
+            
+            <!-- Left Side: Onboarding OR Packing List -->
+            <section class="sidebar-left-large">
+                
+                <!-- Trip Selector & Management Panel (Owner only) -->
+                <div class="glass-panel trip-manager-header" id="tripManagerHeader" style="display:none;">
+                    <div class="trip-select-box">
+                        <label for="tripSelect"><strong>Active Trip:</strong></label>
+                        <select id="tripSelect" onchange="changeActiveTrip(this.value)">
+                            <!-- Dynamic trip options -->
+                        </select>
+                    </div>
+                    <div class="trip-action-btns">
+                        <button class="btn-secondary" onclick="showNewTripWizard()"><i class="fa-solid fa-plus"></i> New Trip</button>
+                        <button class="btn-secondary" id="btnArchiveTrip" onclick="archiveActiveTrip()"><i class="fa-solid fa-box-archive"></i> Archive</button>
+                        <button class="btn-danger" id="btnDeleteTrip" onclick="deleteActiveTrip()"><i class="fa-solid fa-trash"></i> Delete</button>
+                    </div>
+                </div>
+                
+                <!-- 1. Conversational Onboarding -->
+                <div id="onboardingView" class="glass-panel onboarding-chat-panel active">
+                    <div class="wizard-back-btn-row" id="wizardCancelBtnRow" style="display:none; margin-bottom:15px;">
+                        <button type="button" class="btn-secondary" onclick="cancelWizard()"><i class="fa-solid fa-arrow-left"></i> Back to Dashboard</button>
+                    </div>
+                    <div class="onboarding-chat-header">
+                        <i class="fa-solid fa-wand-magic-sparkles" style="color: var(--accent); font-size: 24px;"></i>
+                        <h2>Plan Your Adventure</h2>
+                        <p>Let's converse to set up your trip profile and generate your custom packing checklist.</p>
+                    </div>
+                    
+                    <div class="onboarding-chat-messages" id="onboardingChatMessages">
+                        <!-- Onboarding messages will be injected here -->
+                    </div>
+                    
+                    <form class="onboarding-chat-input-bar" onsubmit="handleSendOnboardingMessage(event)">
+                        <textarea id="onboardingChatMessageVal" required placeholder="Type your response to Tola AI Copilot..." rows="2"></textarea>
+                        <button type="submit" class="btn-primary" style="padding: 10px 20px;"><i class="fa-regular fa-paper-plane"></i> Send</button>
+                    </form>
+                </div>
+
+                <!-- 2. Packing List Dashboard -->
+                <div id="dashboardView" class="glass-panel packing-dashboard-panel">
+                    <div class="dashboard-header">
+                        <h2 id="dashboardTripTitle">Your Travel Packing List</h2>
+                        <div class="lock-toggle-badge" id="lockToggleBadge">
+                            <i class="fa-solid fa-lock-open" id="lockIcon"></i>
+                            <span id="lockText">Unlocked</span>
+                            <span id="archivedBadge" class="archived-badge" style="display:none;">Archived</span>
+                            <button class="btn-primary-small" id="btnToggleLock" onclick="toggleEditLock()" style="display:none;">Toggle Lock</button>
+                        </div>
+                    </div>
+                    
+                    <!-- Add Item Form (Only for edit or owner privilege) -->
+                    <div class="add-item-panel" id="addItemPanel">
+                        <h3>Add List Item</h3>
+                        <form onsubmit="handleAddPackingItem(event)" class="add-item-form-grid">
+                            <input type="text" id="addName" required placeholder="Item name..." class="grid-span-2">
+                            <input type="number" id="addQty" required min="1" value="1" placeholder="Qty">
+                            <input type="text" id="addCategory" placeholder="Category (e.g. Clothing)">
+                            <select id="addPriority">
+                                <option value="Low">Low</option>
+                                <option value="Medium" selected>Medium</option>
+                                <option value="High">High</option>
+                            </select>
+
+                            <input type="text" id="addDesc" placeholder="Notes/Description..." class="grid-span-3">
+                            <button type="submit" class="btn-primary">Add Item</button>
+                        </form>
+                        <div class="error-msg-box" id="addItemError"></div>
+                    </div>
+
+                    <!-- Items List Container -->
+                    <div class="packing-list-items-container" id="packingListItemsContainer">
+                        <!-- Grouped packing items will be injected here -->
+                    </div>
+
+                    <!-- PDF Export Panel -->
+                    <div class="pdf-export-panel">
+                        <h3>Export Checklist</h3>
+                        <div class="pdf-export-row">
+                            <div class="checkbox-group">
+                                <input type="checkbox" id="pdfPrinterFriendly">
+                                <label for="pdfPrinterFriendly"><strong>Printer Friendly</strong> (Monochrome layout, saves ink/toner)</label>
+                            </div>
+                            <button class="btn-primary" onclick="triggerPdfExport()"><i class="fa-solid fa-file-pdf"></i> Download PDF Checklist</button>
+                        </div>
+                        <div class="pdf-export-row" style="margin-top: 15px; border-top: 1px dashed var(--border-color); padding-top: 15px; display: flex; gap: 10px; justify-content: flex-start; flex-wrap: wrap;">
+                            <button class="btn-secondary" onclick="triggerMarkdownExport()"><i class="fa-solid fa-file-arrow-down"></i> Download Markdown (.md)</button>
+                            <button class="btn-secondary" onclick="copyMarkdownToClipboard()" title="Copy list to paste into Keep, OneNote, Trello, Obsidian, Notion, Bear, Joplin, and other note apps"><i class="fa-regular fa-clipboard"></i> Copy to Clipboard</button>
+                        </div>
+                        <p style="font-size: 11px; color: var(--text-muted); margin-top: 8px; line-height: 1.4;">
+                            <i class="fa-solid fa-circle-info"></i> Compatible with note-taking apps that support Markdown (such as Notion, Obsidian, Bear, Google Keep, OneNote, Trello, and Joplin).
+                        </p>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- Right Side: AI Copilot Sidebar Panel -->
+            <section id="copilotSidebar" class="sidebar-right glass-panel copilot-chat-sidebar" style="display: none;">
+                <div class="copilot-header">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i>
+                    <h3>Tola AI Copilot</h3>
+                </div>
+                
+                <div class="chat-messages-container" id="copilotChatMessages">
+                    <div class="message system-msg">
+                        <p>Hello! 👋 I'm your AI Copilot. Tell me about your trip or ask me anything—I can check local weather, suggest tailored packing lists, list important travel tasks, and answer any compliance questions for your destinations.</p>
+                    </div>
+                </div>
+                
+                <form class="chat-input-bar" onsubmit="handleSendCopilotMessage(event)">
+                    <textarea id="copilotChatMessageVal" required placeholder="Ask me anything! Check destination rules, get gear suggestions, or ask to update your packing list notes..." rows="2"></textarea>
+                    <button type="submit" class="btn-send"><i class="fa-regular fa-paper-plane"></i></button>
+                </form>
+            </section>
+            
+        </div>
+    </main>
+
+    <!-- Floating Item Tooltip Popover -->
+    <div id="itemTooltipPopover" class="popover-tooltip" style="display:none; position: absolute; z-index: 1000;">
+        <div class="tooltip-img-wrapper">
+            <a id="tooltipSearchLink" href="#" target="_blank" title="Search on Google">
+                <img id="tooltipImage" src="" alt="Item photo">
+                <div class="tooltip-badge">
+                    <i class="fa-solid fa-magnifying-glass"></i> Search Google
+                </div>
+            </a>
+        </div>
+    </div>
+
+    <!-- Global popup toast container -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- Script assets -->
+    <script src="/static/app.js"></script>
+</body>
+</html>

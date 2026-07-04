@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  tola-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tola-travel-packing-app
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/code/data
+      - ./logs:/code/logs
+    environment:
+      - ADMIN_PASSWORD=SecureAdminPass123!
+      - GOOGLE_API_KEY=your-gemini-api-key
+    restart: unless-stopped
