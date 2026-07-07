@@ -115,42 +115,6 @@ html[data-color-scheme="dark"][data-theme="fjord"] {
     --accent-bg: hsla(205, 20%, 58%, 0.15);
 }
 
-.checklist-item-row.priority-high {
-    border-left: 3px solid var(--danger);
-}
-
-.checklist-item-row.sub-item {
-    margin-left: 30px;
-    border-left: 2px solid var(--accent) !important;
-    background: hsla(var(--primary-hue), var(--primary-sat), 96%, 0.4);
-    width: calc(100% - 30px);
-}
-
-html[data-color-scheme="dark"] .checklist-item-row.sub-item {
-    background: hsla(var(--primary-hue), var(--primary-sat), 12%, 0.4);
-}
-
-.caret-btn {
-    padding: 0;
-    margin: 0;
-    width: 20px;
-    height: 20px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--text-muted);
-    cursor: pointer;
-    background: none;
-    border: none;
-    flex-shrink: 0;
-}
-
-.caret-placeholder {
-    width: 20px;
-    display: inline-block;
-    flex-shrink: 0;
-}
-
 * {
     box-sizing: border-box;
     margin: 0;
@@ -307,8 +271,6 @@ h1, h2, h3, h4, h5, h6 {
     font-family: inherit;
     font-size: 14px;
 }
-
-
 
 /* Packing List View Dashboard */
 .packing-dashboard-panel {
@@ -524,6 +486,38 @@ select:focus {
 
 .checklist-item-row.priority-high {
     border-left: 3px solid var(--danger);
+}
+
+.checklist-item-row.sub-item {
+    margin-left: 30px;
+    border-left: 2px solid var(--accent) !important;
+    background: hsla(var(--primary-hue), var(--primary-sat), 96%, 0.4);
+    width: calc(100% - 30px);
+}
+
+html[data-color-scheme="dark"] .checklist-item-row.sub-item {
+    background: hsla(var(--primary-hue), var(--primary-sat), 12%, 0.4);
+}
+
+.caret-btn {
+    padding: 0;
+    margin: 0;
+    width: 20px;
+    height: 20px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    cursor: pointer;
+    background: none;
+    border: none;
+    flex-shrink: 0;
+}
+
+.caret-placeholder {
+    width: 20px;
+    display: inline-block;
+    flex-shrink: 0;
 }
 
 .item-content-cols {
@@ -960,12 +954,51 @@ select:focus {
     border: 2px dashed var(--accent);
 }
 
-.item-thumbnail {
-    width: 38px;
-    height: 38px;
-    border-radius: var(--radius-sm);
-    object-fit: cover;
+.item-label-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.item-name-link {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-base);
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.item-name-link:hover {
+    text-decoration: underline;
+    color: var(--accent);
+}
+
+.item-qty-input {
+    width: 44px;
+    font-size: 12px;
+    font-weight: 500;
+    text-align: center;
     border: 1px solid var(--border-color);
-    flex-shrink: 0;
-    margin-top: 2px;
+    background: var(--bg-surface);
+    color: var(--text-base);
+    border-radius: var(--radius-sm);
+    padding: 2px 4px;
+}
+
+.item-qty-input:disabled {
+    background: transparent;
+    border-color: transparent;
+    color: var(--text-muted);
+    cursor: default;
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: textfield;
+    pointer-events: none;
+}
+
+/* Hide number input spinners */
+.item-qty-input::-webkit-outer-spin-button,
+.item-qty-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
 }

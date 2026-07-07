@@ -9,7 +9,6 @@ Tola is a modern, responsive single-user packing checklist web application that 
 ```mermaid
 flowchart TD
     Frontend["Frontend SPA"] <--> Backend["FastAPI Backend Server"]
-    Frontend -->|"Category-masked Image and Alt-Text"| Tooltip["Tooltip Popover and Thumbnails"]
     Backend -->|"PII Regex scrubbing"| PIIFilter["PII Ingress Filter"]
     PIIFilter -->|"Sanitized Input"| OnboardingWizard["OnboardingWizard Agent"]
     OnboardingWizard -->|"Coordinative Plan"| DestinationAnalyzer["DestinationAnalyzer Agent"]
@@ -17,7 +16,8 @@ flowchart TD
     ActivityGearPlanner -->|"Activity-Aware Gear Plan"| GroupHealthProfiler["GroupHealthProfiler Agent"]
     GroupHealthProfiler <-->|"Obfuscated Classifications"| GoogleSearch["Google Search Tool"]
     GroupHealthProfiler -->|"Private/Medical Compliance"| PackingTaskGenerator["PackingTaskGenerator Agent"]
-    PackingTaskGenerator -->|"Lodging, Reservations, Travel Compliance"| Database[("SQLite Database (WAL Mode)")]
+    PackingTaskGenerator -->|"Lodging, Reservations Tasks"| ComplianceEngine["Deterministic Compliance (Power, Passports, Vaccines)"]
+    ComplianceEngine -->|"Unification & De-duplication"| Database[("SQLite Database (WAL Mode)")]
     Backend <-->|"CRUD and Lock Checks"| Database
     Backend -->|"zlib Decompression / PDF and MD Export"| ReportExporters["Report Exporters (PDF & Markdown)"]
 ```
@@ -71,11 +71,11 @@ flowchart TD
         ObfuscationNote["DRUG_OBFUSCATION_MAP prevents PHI leak"] -.-> GroupHealthProfiler
         
         GroupHealthProfiler -->|"Medical Needs, Compliance Warnings"| PackingTaskGenerator["PackingTaskGenerator Agent"]
-        PackingTaskGenerator -->|"Leg-based lodging, Activity Reservations, Adapters"| Database[("SQLite Database (WAL Mode)")]
+        PackingTaskGenerator -->|"Leg-based lodging, Activity Reservations"| ComplianceEngine["Deterministic Compliance (Power, Passports, Vaccines)"]
+        ComplianceEngine --> Database[("SQLite Database (WAL Mode)")]
     end
 
     Database -->|"is_private Boolean"| Frontend["Frontend SPA"]
-    Frontend <-->|"Image and Search Masking"| Tooltip["Tooltip Preview Image"]
 ```
 
 ### 3. Grounded Weather Packing Suggestions & Fallback Engine
@@ -177,10 +177,9 @@ sequenceDiagram
     end
 ```
 
-### 12. Inline Thumbnails & Hover Tooltips
-* **List Thumbnail**: Every checklist row includes a small `38px` image thumbnail inline.
-* **Expanded Hover Tooltips**: Hovering over an item reveals a popover containing an expanded `220px` preview image and a Google Search link.
-* **Privacy Masking**: For items marked private (`is_private = true`), the preview image falls back to a generic Category illustration, the alt-text is masked, and the search query uses the broad Category (e.g., `Medications travel packing` instead of the specific drug name) to protect health privacy.
+### 12. Privacy-Guarded Google Search Hyperlinks
+* **Google Search Hyperlinks on Item Names**: To help travelers research gear or task requirements, each item name in the checklist is styled as an interactive link that opens a targeted Google search query in a new tab.
+* **Privacy Masking Guardrail**: To protect traveler PHI and PII privacy, search queries for items marked private (`is_private = true`, such as prescription medications) automatically mask the specific item name. The link queries Google using the item's broad category phrase instead (e.g. searching for `"Medications travel packing"` instead of the specific drug name), ensuring private medical data is never leaked.
 
 ### 13. Hierarchical Markdown Checklist Export
 * **Endpoint**: `/api/trips/{trip_id}/export/markdown` generates plain-text markdown lists grouped by category.
@@ -239,7 +238,6 @@ erDiagram
         string trip_name
         string start_date
         integer group_size
-        string demographics
         string activities
         boolean is_archived
         boolean list_locked
@@ -280,6 +278,7 @@ erDiagram
         string demographic_category
         string preference_tags
         string medications
+        string custom_sub_items
     }
     trips ||--o{ packing_items : contains
     trips ||--o{ travelers : has
@@ -289,7 +288,7 @@ erDiagram
 
 ## 📋 Deployment Prerequisites
 Before setting up or deploying the application (locally or via Docker), ensure the following prerequisites are met:
-1. **Gemini API Key**: An active Google Gemini API Key from Google AI Studio. This is required for agentic planning.
+1. **Gemini API Key**: An active Google Gemini API Key. Refer to the [Google AI Studio Quickstart Guide](https://ai.google.dev/gemini-api/docs/quickstart) for instructions on setting up an account and creating your API key.
 2. **Environment File**: A `.env` file containing `GEMINI_API_KEY="..."` positioned in the running directory.
 3. **Data Volume Mount**: Write permissions on the `./data` host directory for the SQLite WAL-mode database file.
 4. **Port Availability**: Port `8000` (or any alternative port selected by the operator) must be open and available on the host machine.
@@ -312,24 +311,7 @@ GEMINI_API_KEY="your-google-ai-studio-api-key"
 uv sync
 ```
 
-### 3. Run Automated Tests
-By default, the test suite runs in **mock mode** using local fallbacks and stubs (making **zero live API calls** and running in under 6 seconds).
-
-To run tests in mock mode:
-```bash
-uv run pytest
-```
-
-To run integration tests in **live mode** against the live Gemini API (useful when verifying prompt engineering or agent connection logic):
-```bash
-# Run using the CLI flag
-uv run pytest --live
-
-# Or by setting the environment variable
-GEMINI_LIVE_TESTING=true uv run pytest
-```
-
-### 4. Start the Application
+### 3. Start the Application
 Start the local development server:
 ```bash
 uv run fastapi dev app/fast_api_app.py --port 8000

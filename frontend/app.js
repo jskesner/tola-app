@@ -86,41 +86,32 @@ window.addEventListener('DOMContentLoaded', () => {
     document.getElementById('themeSelect').value = savedTheme;
     document.documentElement.setAttribute('data-theme', savedTheme);
 
-    // 2. Load color scheme
-    const savedScheme = localStorage.getItem('tola-scheme') || 'system';
-    document.getElementById('schemeSelect').value = savedScheme;
-    applyColorScheme(savedScheme);
-
-    // 3. Load trips
+    // 2. Load trips
     loadTrips();
 });
 
-function changeTheme(theme) {
+async function changeTheme(theme) {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('tola-theme', theme);
-}
+    const themeSelect = document.getElementById('themeSelect');
+    if (themeSelect) themeSelect.value = theme;
 
-function changeColorScheme(scheme) {
-    localStorage.setItem('tola-scheme', scheme);
-    applyColorScheme(scheme);
-}
-
-function applyColorScheme(scheme) {
-    if (scheme === 'system') {
-        const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        document.documentElement.setAttribute('data-color-scheme', systemDark ? 'dark' : 'light');
-    } else {
-        document.documentElement.setAttribute('data-color-scheme', scheme);
+    if (activeTripId) {
+        const trip = tripsList.find(t => t.trip_id === activeTripId);
+        if (trip && trip.theme !== theme) {
+            trip.theme = theme;
+            try {
+                await fetch(`/api/trips/${activeTripId}/theme`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ theme })
+                });
+            } catch (e) {
+                console.error("Error updating trip theme:", e);
+            }
+        }
     }
 }
-
-// System color scheme change listener
-window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-    const savedScheme = localStorage.getItem('tola-scheme') || 'system';
-    if (savedScheme === 'system') {
-        applyColorScheme('system');
-    }
-});
 
 async function loadTrips() {
     try {
@@ -171,12 +162,6 @@ async function selectActiveTripUI() {
     const trip = tripsList.find(t => t.trip_id === activeTripId);
     if (!trip) return;
 
-    if (trip.theme) {
-        document.documentElement.setAttribute('data-theme', trip.theme);
-        document.getElementById('themeSelect').value = trip.theme;
-        localStorage.setItem('tola-theme', trip.theme);
-    }
-
     document.getElementById('dashboardTripTitle').innerText = `Checklist for: ${trip.trip_name}`;
     listLocked = trip.list_locked === 1;
     
@@ -191,6 +176,10 @@ async function selectActiveTripUI() {
 
     updateLockUI();
     renderPackingList();
+
+    if (trip.theme) {
+        changeTheme(trip.theme);
+    }
 
     document.getElementById('btnToggleLock').style.display = 'inline-block';
 }
@@ -212,6 +201,11 @@ function showNewTripWizard() {
 }
 
 function cancelWizard() {
+    if (onboardingChatHistory.length > 1) {
+        if (!confirm("Your trip onboarding details are not saved yet. Are you sure you want to leave?")) {
+            return;
+        }
+    }
     if (tripsList.length > 0) {
         showDashboardView();
     }
@@ -232,7 +226,14 @@ function showOnboardingView() {
     const messagesContainer = document.getElementById('onboardingChatMessages');
     if (messagesContainer && messagesContainer.children.length === 0) {
         onboardingChatHistory = [];
-        appendOnboardingChatMessage("copilot", "Hi! I'm Tola, your AI travel companion. Let's set up your new trip! What is your name and where are you planning to travel?");
+        const greeting = "Hi! I'm Tola, your AI travel companion. Let's set up your new trip! What is your name and where are you planning to travel?";
+        appendOnboardingChatMessage("copilot", greeting);
+        onboardingChatHistory.push({ role: "copilot", text: greeting });
+    }
+
+    // Push history state to intercept browser "back" navigation
+    if (!history.state || history.state.page !== 'onboarding') {
+        history.pushState({ page: 'onboarding' }, '');
     }
 }
 
@@ -246,6 +247,11 @@ function showDashboardView() {
     if (sidebar) sidebar.style.display = 'flex';
     const grid = document.getElementById('workspaceGrid');
     if (grid) grid.classList.remove('onboarding-active');
+
+    // Clear history state if present
+    if (history.state && history.state.page === 'onboarding') {
+        history.replaceState({ page: 'dashboard' }, '');
+    }
 }
 
 // Onboarding Chat Functions
@@ -276,6 +282,7 @@ async function handleSendOnboardingMessage(e) {
     const originalPlaceholder = textarea.placeholder;
     textarea.placeholder = "Tola is thinking...";
 
+    let data = null;
     try {
         const res = await fetch('/api/copilot/chat', {
             method: 'POST',
@@ -288,19 +295,61 @@ async function handleSendOnboardingMessage(e) {
         });
 
         if (res.ok) {
-            const data = await res.json();
+            data = await res.json();
             appendOnboardingChatMessage("copilot", data.reply);
             onboardingChatHistory.push({ role: "copilot", text: data.reply });
 
             if (data.created_trip_id) {
-                showToast("Trip initialized successfully!", "success");
-                setTimeout(async () => {
-                    activeTripId = data.created_trip_id;
-                    // Reset onboarding chat for future "New Trip" wizard runs
-                    document.getElementById('onboardingChatMessages').innerHTML = '';
-                    onboardingChatHistory = [];
-                    await loadTrips();
-                }, 1500);
+                if (data.is_building) {
+                    textarea.disabled = true;
+                    sendBtn.disabled = true;
+                    textarea.placeholder = "Building checklist...";
+                    
+                    let lastStatus = "";
+                    const pollInterval = setInterval(async () => {
+                        try {
+                            const statusRes = await fetch(`/api/trips/${data.created_trip_id}/build-status`);
+                            if (statusRes.ok) {
+                                const statusData = await statusRes.json();
+                                const status = statusData.status;
+                                if (status && status !== lastStatus) {
+                                    lastStatus = status;
+                                    appendOnboardingChatMessage("system", `⚙️ ${status}`);
+                                    
+                                    if (status === "Completed") {
+                                        clearInterval(pollInterval);
+                                        showToast("Workspace checklist compiled!", "success");
+                                        setTimeout(async () => {
+                                            activeTripId = data.created_trip_id;
+                                            document.getElementById('onboardingChatMessages').innerHTML = '';
+                                            onboardingChatHistory = [];
+                                            await loadTrips();
+                                            textarea.disabled = false;
+                                            sendBtn.disabled = false;
+                                            textarea.placeholder = originalPlaceholder;
+                                        }, 1200);
+                                    } else if (status.startsWith("Failed:") || status.startsWith("Error:") || status.startsWith("Failed") || status.startsWith("Error")) {
+                                        clearInterval(pollInterval);
+                                        appendOnboardingChatMessage("system", `❌ Build failed: ${status}`);
+                                        textarea.disabled = false;
+                                        sendBtn.disabled = false;
+                                        textarea.placeholder = originalPlaceholder;
+                                    }
+                                }
+                            }
+                        } catch (pollErr) {
+                            console.error("Error polling build status:", pollErr);
+                        }
+                    }, 750);
+                } else {
+                    showToast("Trip initialized successfully!", "success");
+                    setTimeout(async () => {
+                        activeTripId = data.created_trip_id;
+                        document.getElementById('onboardingChatMessages').innerHTML = '';
+                        onboardingChatHistory = [];
+                        await loadTrips();
+                    }, 1500);
+                }
             }
         } else {
             appendOnboardingChatMessage("system", "Error communicating with AI Copilot.");
@@ -308,10 +357,12 @@ async function handleSendOnboardingMessage(e) {
     } catch (err) {
         appendOnboardingChatMessage("system", "Network error contacting copilot.");
     } finally {
-        textarea.disabled = false;
-        sendBtn.disabled = false;
-        textarea.placeholder = originalPlaceholder;
-        textarea.focus();
+        if (!data || !data.is_building) {
+            textarea.disabled = false;
+            sendBtn.disabled = false;
+            textarea.placeholder = originalPlaceholder;
+            textarea.focus();
+        }
     }
 }
 
@@ -639,14 +690,22 @@ async function renderPackingList() {
                     }
                 }
                 
-                const imgUrl = getItemImageUrl(item.item_name, item.category || 'General', !!item.is_private);
+                const searchQ = item.is_private 
+                    ? encodeURIComponent((item.category || 'General') + ' travel packing')
+                    : encodeURIComponent(item.item_name + ' travel');
+                const searchUrl = `https://www.google.com/search?q=${searchQ}`;
+
                 li.innerHTML = `
                     ${dragHandleHTML}
                     ${caretHTML}
                     <input type="checkbox" ${isChecked} ${disabled} onchange="toggleCheck(${item.id}, this.checked)">
-                    <img class="item-thumbnail" src="${imgUrl}" alt="${item.is_private ? (item.category || 'General') : item.item_name}">
                     <div class="item-content-cols">
-                        <span class="item-label-name">${item.item_name} <span class="qty-badge">x${item.quantity}</span></span>
+                        <div class="item-label-row">
+                            <a href="${searchUrl}" target="_blank" class="item-name-link" title="Search Google for ${item.item_name}">${item.item_name}</a>
+                            <input type="number" class="item-qty-input" value="${item.quantity}" min="0" max="99" ${disabled} 
+                                   onchange="updateQuantity(${item.id}, this.value, ${item.quantity})" 
+                                   onkeypress="if(event.key==='Enter') this.blur()">
+                        </div>
                         <input type="text" class="item-desc-input" value="${item.description || ''}" ${disabled} 
                                placeholder="Add description/notes..." onblur="updateDescription(${item.id}, this.value)" 
                                onkeypress="if(event.key==='Enter') this.blur()">
@@ -659,16 +718,6 @@ async function renderPackingList() {
                 
                 if (!tripArchived && !listLocked) {
                     setupDragAndDrop(li);
-                }
-
-                const nameLabel = li.querySelector('.item-label-name');
-                if (nameLabel) {
-                    nameLabel.dataset.itemName = item.item_name;
-                    nameLabel.dataset.category = item.category || 'General';
-                    nameLabel.dataset.isPrivate = item.is_private ? 'true' : 'false';
-                    nameLabel.addEventListener('mouseenter', onItemRowMouseEnter);
-                    nameLabel.addEventListener('mousemove',  onItemRowMouseMove);
-                    nameLabel.addEventListener('mouseleave', onItemRowMouseLeave);
                 }
                 
                 listUl.appendChild(li);
@@ -706,6 +755,54 @@ async function toggleCheck(id, checked) {
         }
     } catch (e) {
         showToast("Error updating checkbox.", "error");
+    }
+}
+
+async function updateQuantity(id, newVal, oldVal) {
+    const num = Number(newVal);
+    if (!Number.isInteger(num) || num < 0 || num > 99) {
+        showToast("Quantity must be a whole number between 0 and 99.", "error");
+        renderPackingList();
+        return;
+    }
+    if (num === 0) {
+        if (confirm("Are you sure you want to delete this item?")) {
+            await deleteItem(id);
+        } else {
+            renderPackingList();
+        }
+        return;
+    }
+    try {
+        const listRes = await fetch(`/api/trips/${activeTripId}/packing`);
+        const items = await listRes.json();
+        const item = items.find(i => i.id === id);
+        if (!item) return;
+
+        const res = await fetch(`/api/trips/${activeTripId}/packing/items/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                item_name: item.item_name,
+                quantity: num,
+                category: item.category,
+                priority: item.priority,
+                is_private: item.is_private ? true : false,
+                description: item.description || ""
+            })
+        });
+
+        if (res.ok) {
+            showToast("Quantity updated.");
+            renderPackingList();
+        } else {
+            const data = await res.json();
+            showToast(data.detail || "Validation failed for quantity.", "error");
+            renderPackingList();
+        }
+    } catch (e) {
+        showToast("Error updating quantity.", "error");
+        renderPackingList();
     }
 }
 
@@ -878,6 +975,11 @@ async function handleSendCopilotMessage(e) {
         if (res.ok) {
             const data = await res.json();
             appendCopilotMessage("copilot", data.reply);
+            if (data.regenerated) {
+                await loadTrips();
+                await selectActiveTripUI();
+                showToast("Trip checklist regenerated successfully.");
+            }
         } else {
             appendCopilotMessage("system", "Error communicating with AI Copilot.");
         }
@@ -911,6 +1013,8 @@ const CATEGORY_IMAGES = {
     'Clothing':      'https://images.unsplash.com/photo-1512436991641-6745cdb1723f?w=300&q=80',
     'Electronics':   'https://images.unsplash.com/photo-1519389950473-47ba0277781c?w=300&q=80',
     'Toiletries':    'https://images.unsplash.com/photo-1556228453-efd6c1ff04f6?w=300&q=80',
+    'Hygiene':       'https://images.unsplash.com/photo-1556228453-efd6c1ff04f6?w=300&q=80',
+    'Entertainment': 'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=300&q=80',
     'Documents':     'https://images.unsplash.com/photo-1568605114967-8130f3a36994?w=300&q=80',
     'Accessories':   'https://images.unsplash.com/photo-1491553895911-0055eca6402d?w=300&q=80',
     'Tasks':         'https://images.unsplash.com/photo-1484480974693-6ca0a78fb36b?w=300&q=80',
@@ -921,10 +1025,11 @@ const CATEGORY_IMAGES = {
 // Keyword-to-image map for public items (matched against item name)
 const ITEM_KEYWORD_IMAGES = [
     { keywords: ['passport', 'id', 'document', 'visa'],           url: 'https://images.unsplash.com/photo-1568605114967-8130f3a36994?w=300&q=80' },
-    { keywords: ['shirt', 't-shirt', 'tshirt', 'top'],            url: 'https://images.unsplash.com/photo-1503341504253-dff4815485f1?w=300&q=80' },
+    { keywords: ['shirt', 't-shirt', 'tshirt', 'top', 'jersey'],  url: 'https://images.unsplash.com/photo-1503341504253-dff4815485f1?w=300&q=80' },
     { keywords: ['pants', 'trousers', 'jeans', 'shorts'],         url: 'https://images.unsplash.com/photo-1542272604-787c3835535d?w=300&q=80' },
+    { keywords: ['underwear', 'bra', 'boxers', 'briefs'],         url: 'https://images.unsplash.com/photo-1616150638538-ffb0679a3fc4?w=300&q=80' },
     { keywords: ['jacket', 'coat', 'raincoat', 'windbreaker'],    url: 'https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=300&q=80' },
-    { keywords: ['shoes', 'boots', 'sneakers', 'sandals'],        url: 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=300&q=80' },
+    { keywords: ['shoes', 'boots', 'sneakers', 'sandals', 'booties'], url: 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=300&q=80' },
     { keywords: ['socks'],                                        url: 'https://images.unsplash.com/photo-1586350977771-b3714d56a8d4?w=300&q=80' },
     { keywords: ['hat', 'cap', 'beanie'],                         url: 'https://images.unsplash.com/photo-1521369909029-2afed882baee?w=300&q=80' },
     { keywords: ['sunglasses', 'glasses'],                        url: 'https://images.unsplash.com/photo-1511499767150-a48a237f0083?w=300&q=80' },
@@ -933,14 +1038,19 @@ const ITEM_KEYWORD_IMAGES = [
     { keywords: ['laptop', 'computer', 'macbook'],                url: 'https://images.unsplash.com/photo-1496181133206-80ce9b88a853?w=300&q=80' },
     { keywords: ['camera', 'gopro', 'lens'],                      url: 'https://images.unsplash.com/photo-1516035069371-29a1b244cc32?w=300&q=80' },
     { keywords: ['headphones', 'earbuds', 'airpods'],             url: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=300&q=80' },
-    { keywords: ['toothbrush', 'toothpaste', 'dental'],           url: 'https://images.unsplash.com/photo-1607613009820-a29f7bb81c04?w=300&q=80' },
-    { keywords: ['shampoo', 'conditioner', 'soap'],               url: 'https://images.unsplash.com/photo-1556228578-8c89e6adf883?w=300&q=80' },
+    { keywords: ['toothbrush', 'toothpaste', 'dental', 'floss'],  url: 'https://images.unsplash.com/photo-1607613009820-a29f7bb81c04?w=300&q=80' },
+    { keywords: ['shampoo', 'conditioner', 'soap', 'body wash'],  url: 'https://images.unsplash.com/photo-1556228578-8c89e6adf883?w=300&q=80' },
+    { keywords: ['makeup', 'cosmetics', 'lipstick', 'foundation', 'mascara', 'blush', 'polish'], url: 'https://images.unsplash.com/photo-1596462502278-27bfdc403348?w=300&q=80' },
+    { keywords: ['deodorant'],                                    url: 'https://images.unsplash.com/photo-1618330834871-dd22c2c226ca?w=300&q=80' },
+    { keywords: ['perfume', 'cologne', 'fragrance', 'scent'],     url: 'https://images.unsplash.com/photo-1541643600914-78b084683601?w=300&q=80' },
+    { keywords: ['razor', 'shaver', 'shaving'],                   url: 'https://images.unsplash.com/photo-1626245917897-4f617f9cd8d8?w=300&q=80' },
+    { keywords: ['rolex', 'watch', 'smartwatch'],                 url: 'https://images.unsplash.com/photo-1524592094714-0f0654e20314?w=300&q=80' },
     { keywords: ['sunscreen', 'sunblock', 'spf'],                 url: 'https://images.unsplash.com/photo-1512290923902-8a9f81dc236c?w=300&q=80' },
     { keywords: ['umbrella', 'rain'],                             url: 'https://images.unsplash.com/photo-1519692933481-e162a57d6721?w=300&q=80' },
     { keywords: ['book', 'journal', 'notebook'],                  url: 'https://images.unsplash.com/photo-1481627834876-b7833e8f5570?w=300&q=80' },
     { keywords: ['backpack', 'bag', 'luggage', 'suitcase'],       url: 'https://images.unsplash.com/photo-1553361371-9b22f78e8b1d?w=300&q=80' },
     { keywords: ['wallet', 'money', 'cash', 'cards'],             url: 'https://images.unsplash.com/photo-1627843240167-b1f9d28f732b?w=300&q=80' },
-    { keywords: ['inhaler', 'epipen', 'first aid', 'bandage'],    url: 'https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=300&q=80' },
+    { keywords: ['inhaler', 'epipen', 'first aid', 'bandage', 'pill', 'medicine', 'prescription', 'zoloft', 'benadryl'], url: 'https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=300&q=80' },
     { keywords: ['snack', 'food', 'bar', 'energy'],               url: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=300&q=80' },
     { keywords: ['water bottle', 'bottle', 'flask'],              url: 'https://images.unsplash.com/photo-1523362628745-0c100150b504?w=300&q=80' },
     { keywords: ['lock', 'padlock'],                              url: 'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=300&q=80' },
@@ -983,7 +1093,7 @@ function sanitizeImageSearchTerms(cleanName) {
  *
  * Resolution order (public items):
  *   1. Curated keyword map  — high-quality Unsplash photos for common travel items
- *   2. Dynamic Unsplash     — derives search terms from the cleaned item name
+ *   2. Dynamic placeholder  — derives search terms from the cleaned item name via LoremFlickr
  *   3. Category fallback    — generic category-level Unsplash image
  *
  * Private items always get the category-level fallback (no name exposure).
@@ -993,10 +1103,12 @@ function getItemImageUrl(itemName, category, isPrivate) {
         return CATEGORY_IMAGES[category] || CATEGORY_IMAGES['General'];
     }
 
-    // Clean name: strip " for [Traveler]" suffix and any details in parentheses
+    // Clean name: strip " for [Traveler]" suffix, parentheses, brackets, and possessives
     let cleanName = itemName;
-    cleanName = cleanName.replace(/\s+for\s+[a-z0-9\s\-]+$/i, '').trim();
     cleanName = cleanName.replace(/\(.*?\)/g, '').trim();
+    cleanName = cleanName.replace(/\[.*?\]/g, '').trim();
+    cleanName = cleanName.replace(/\b[a-z0-9]+\'s\b/gi, '').trim();
+    cleanName = cleanName.replace(/\s+for\s+.+$/i, '').trim();
 
     // 1. Check curated keyword map
     const nameLower = cleanName.toLowerCase();
@@ -1006,10 +1118,10 @@ function getItemImageUrl(itemName, category, isPrivate) {
         }
     }
 
-    // 2. Dynamic Unsplash Featured fallback from cleaned item name
+    // 2. Dynamic placeholder fallback (using LoremFlickr tag search as Unsplash Source is deprecated)
     const terms = sanitizeImageSearchTerms(cleanName);
     if (terms) {
-        return `https://images.unsplash.com/featured/300x300/?travel,${encodeURIComponent(terms)}`;
+        return `https://loremflickr.com/300/300/travel,${encodeURIComponent(terms)}`;
     }
 
     // 3. Category fallback
@@ -1087,5 +1199,29 @@ document.addEventListener('DOMContentLoaded', () => {
     if (tip) {
         tip.addEventListener('mouseenter', () => clearTimeout(_tooltipHideTimer));
         tip.addEventListener('mouseleave', onItemRowMouseLeave);
+    }
+});
+
+// Window navigation safeguards
+window.addEventListener('beforeunload', (event) => {
+    const onboardingActive = document.getElementById('onboardingView')?.classList.contains('active');
+    if (onboardingActive && onboardingChatHistory.length > 1) {
+        event.preventDefault();
+        event.returnValue = 'Your trip onboarding details are not saved yet. Are you sure you want to leave?';
+        return event.returnValue;
+    }
+});
+
+window.addEventListener('popstate', (event) => {
+    const onboardingActive = document.getElementById('onboardingView')?.classList.contains('active');
+    if (onboardingActive && onboardingChatHistory.length > 1) {
+        if (!confirm("Your trip onboarding details are not saved yet. Are you sure you want to leave?")) {
+            // Push the state back to stay on onboarding
+            history.pushState({ page: 'onboarding' }, '');
+            return;
+        }
+    }
+    if (tripsList.length > 0) {
+        showDashboardView();
     }
 });

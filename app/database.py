@@ -95,7 +95,25 @@ def init_db():
     );
     """)
 
+    # Migration: Add custom_sub_items to travelers if missing
+    cursor.execute("PRAGMA table_info(travelers)")
+    cols = [c[1] for c in cursor.fetchall()]
+    if "custom_sub_items" not in cols:
+        cursor.execute("ALTER TABLE travelers ADD COLUMN custom_sub_items TEXT DEFAULT '{}'")
+
+    # Destination research cache table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS destination_research_cache (
+        location VARCHAR(150) NOT NULL,
+        month VARCHAR(50) NOT NULL,
+        analysis_text TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY(location, month)
+    );
+    """)
+
     conn.commit()
     conn.close()
 
 init_db()
+

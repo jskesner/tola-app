@@ -104,17 +104,6 @@ DRUG_OBFUSCATION_MAP = {
     "parnate":          "monoamine oxidase inhibitor antidepressant",
     "selegiline":       "monoamine oxidase inhibitor medication",
     "emsam":            "monoamine oxidase inhibitor medication",
-    "lipitor":          "statin cardiovascular medication",
-    "zocor":            "statin cardiovascular medication",
-    "crestor":          "statin cardiovascular medication",
-    "atorvastatin":     "statin cardiovascular medication",
-    "simvastatin":      "statin cardiovascular medication",
-    "ventolin":         "bronchodilator asthma inhaler medication",
-    "albuterol":        "bronchodilator asthma inhaler medication",
-    "proair":           "bronchodilator asthma inhaler medication",
-    "insulin":          "insulin diabetic treatment medication",
-    "humalog":          "insulin diabetic treatment medication",
-    "lantus":           "insulin diabetic treatment medication",
 }
 
 STATIC_CLIMATE_FALLBACK = {
@@ -218,6 +207,14 @@ def classify_medication_phi_safe(medication_name: str) -> str:
         if drug_key in med_lower:
             return classification
             
+    # Some other common ones not in DRUG_OBFUSCATION_MAP
+    if any(x in med_lower for x in ["lipitor", "zocor", "crestor", "atorvastatin", "simvastatin"]):
+        return "statin cardiovascular medication"
+    if any(x in med_lower for x in ["ventolin", "albuterol", "proair"]):
+        return "bronchodilator asthma inhaler medication"
+    if any(x in med_lower for x in ["insulin", "humalog", "lantus"]):
+        return "insulin diabetic treatment medication"
+        
     return "general prescription medication"
 
 
@@ -590,6 +587,28 @@ def get_country_for_location(loc: str) -> str:
                               "pattaya", "krabi", "koh phi phi"]):
         return "Thailand"
 
+    # United States (broad catch, after Canada/Mexico)
+    us_keywords = [
+        "us", "usa", "united states", "u.s.a.", "hawaii", "honolulu", "miami",
+        "new york", "los angeles", "san francisco", "chicago", "boston",
+        "seattle", "denver", "las vegas", "orlando", "washington",
+        "new orleans", "atlanta", "nashville", "austin", "dallas",
+        "houston", "phoenix", "portland", "san diego", "colorado",
+        "key west", "florida", "california", "texas", "alaska",
+        "alabama", "arizona", "arkansas", "connecticut", "delaware",
+        "georgia", "idaho", "illinois", "indiana", "iowa", "kansas",
+        "kentucky", "louisiana", "maine", "maryland", "massachusetts",
+        "michigan", "minnesota", "mississippi", "missouri", "montana",
+        "nebraska", "nevada", "new hampshire", "new jersey", "new mexico",
+        "north carolina", "north dakota", "ohio", "oklahoma", "oregon",
+        "pennsylvania", "rhode island", "south carolina", "south dakota",
+        "tennessee", "utah", "vermont", "virginia", "west virginia",
+        "wisconsin", "wyoming", "rockies", "rocky mountains", "grand canyon",
+        "yellowstone", "yosemite"
+    ]
+    if any(x in loc_lower for x in us_keywords):
+        return "United States"
+
     # Colombia
     if any(x in loc_lower for x in ["colombia", "bogota", "medellin", "cartagena", "cali"]):
         return "Colombia"
@@ -606,13 +625,20 @@ def get_country_for_location(loc: str) -> str:
     if any(x in loc_lower for x in ["costa rica", "san jose"]):
         return "Costa Rica"
 
-    # United States (broad catch, after Canada/Mexico)
-    if any(x in loc_lower for x in ["hawaii", "honolulu", "miami", "us", "usa", "united states",
-                              "new york", "los angeles", "san francisco", "chicago", "boston",
-                              "seattle", "denver", "las vegas", "orlando", "washington",
-                              "new orleans", "atlanta", "nashville", "austin", "dallas",
-                              "houston", "phoenix", "portland", "san diego"]):
-        return "United States"
+    # LLM Fallback for unmapped locations
+    try:
+        from google.genai import Client
+        client = Client()
+        response = client.models.generate_content(
+            model="gemini-2.5-flash-lite",
+            contents=f"What country is the travel destination '{loc}' located in? Return ONLY the clean, standard country name."
+        )
+        resolved = response.text.strip().replace(".", "")
+        resolved = resolved.split("\n")[0].replace("`", "").strip()
+        if resolved and len(resolved) < 50:
+            return resolved
+    except Exception:
+        pass
 
     return loc.title()
 

@@ -19,6 +19,14 @@ from reportlab.platypus import (
 from app.database import decompress_data, get_db_connection
 
 
+def safe_latin1(s: str) -> str:
+    if not s:
+        return ""
+    # Replace common typographic smart quotes with standard ASCII equivalents
+    s = s.replace('\u201c', '"').replace('\u201d', '"').replace('\u2018', "'").replace('\u2019', "'")
+    return s.encode('latin-1', errors='replace').decode('latin-1')
+
+
 class InteractiveCheckbox(Flowable):
     def __init__(self, name, checked=False, size=10):
         super().__init__()
@@ -28,10 +36,11 @@ class InteractiveCheckbox(Flowable):
 
     def draw(self):
         self.canv.saveState()
+        abs_x, abs_y = self.canv.absolutePosition(0, 0)
         self.canv.acroForm.checkbox(
             name=self.name,
-            x=0,
-            y=0,
+            x=abs_x,
+            y=abs_y,
             buttonStyle='check',
             checked=self.checked,
             size=self.size
@@ -42,20 +51,51 @@ class InteractiveCheckbox(Flowable):
         return self.size, self.size
 
 class InteractiveTextField(Flowable):
-    def __init__(self, name, value="", width=240, height=12):
+    def __init__(self, name, value="", width=240, height=14, indent=0):
         super().__init__()
         self.name = name
-        self.value = value
+        self.value = safe_latin1(value or "")
+        self.width = width
+        self.height = height
+        self.indent = indent
+
+    def draw(self):
+        self.canv.saveState()
+        abs_x, abs_y = self.canv.absolutePosition(self.indent, 0)
+        self.canv.acroForm.textfield(
+            name=self.name,
+            value=self.value,
+            x=abs_x,
+            y=abs_y,
+            width=self.width - self.indent,
+            height=self.height
+        )
+        self.canv.restoreState()
+
+    def wrap(self, availWidth, availHeight):
+        return self.width, self.height
+
+class InteractiveChoiceField(Flowable):
+    def __init__(self, name, value="Medium", options=None, width=50, height=14):
+        super().__init__()
+        self.name = name
+        self.options = [safe_latin1(opt) for opt in (options or ["High", "Medium", "Low"])]
+        val_safe = safe_latin1(value or "Medium")
+        if val_safe not in self.options:
+            val_safe = "Medium"
+        self.value = val_safe
         self.width = width
         self.height = height
 
     def draw(self):
         self.canv.saveState()
-        self.canv.acroForm.textfield(
+        abs_x, abs_y = self.canv.absolutePosition(0, 0)
+        self.canv.acroForm.choice(
             name=self.name,
             value=self.value,
-            x=0,
-            y=0,
+            options=self.options,
+            x=abs_x,
+            y=abs_y,
             width=self.width,
             height=self.height
         )
@@ -233,40 +273,73 @@ def generate_pdf(trip_id: str, printer_friendly: bool = False) -> bytes:
 
             # Create a table for items under this category
             table_data = []
-            for item in cat_items:
-                # Layout based on layout mode
-                if printer_friendly:
-                    status_box = "[x]" if item['is_checked'] else "[ ]"
-                    desc = item['description'] or ""
-                    desc_cell = Paragraph(desc, notes_style) if desc else Paragraph("", notes_style)
-                else:
-                    status_box = InteractiveCheckbox(f"chk_{item['id']}", checked=bool(item['is_checked']), size=10)
-                    desc = item['description'] or ""
-                    desc_cell = InteractiveTextField(f"txt_{item['id']}", value=desc, width=240, height=12)
-
-                item_label = f"{item['item_name']} (Qty: {item['quantity']})"
-                if item['priority'] == 'High':
-                    item_label += " [!] "
-
-                style_to_use = item_indent_style if item.get('parent_id') else item_style
-
+            if printer_friendly:
                 table_data.append([
-                    status_box,
-                    Paragraph(item_label, style_to_use),
-                    desc_cell
+                    Paragraph("<b>Status</b>", item_style),
+                    Paragraph("<b>Item Name</b>", item_style),
+                    Paragraph("<b>Qty</b>", item_style),
+                    Paragraph("<b>Priority</b>", item_style),
+                    Paragraph("<b>Description / Notes</b>", item_style)
+                ])
+            else:
+                table_data.append([
+                    Paragraph("", item_style),
+                    Paragraph("<b>Item Name</b>", item_style),
+                    Paragraph("<b>Qty</b>", item_style),
+                    Paragraph("<b>Priority</b>", item_style),
+                    Paragraph("<b>Description / Notes</b>", item_style)
                 ])
 
-            t = Table(table_data, colWidths=[30, 200, 250])
+            for item in cat_items:
+                style_to_use = item_indent_style if item.get('parent_id') else item_style
+                if printer_friendly:
+                    status_box = Paragraph("[x]" if item['is_checked'] else "[ ]", item_style)
+                    name_cell = Paragraph(item['item_name'], style_to_use)
+                    qty_cell = Paragraph(str(item['quantity']), item_style)
+                    prio_cell = Paragraph(item['priority'] or 'Medium', item_style)
+                    desc = item['description'] or ""
+                    desc_cell = Paragraph(desc, notes_style) if desc else Paragraph("", notes_style)
+
+                    table_data.append([
+                        status_box,
+                        name_cell,
+                        qty_cell,
+                        prio_cell,
+                        desc_cell
+                    ])
+                else:
+                    status_box = InteractiveCheckbox(f"chk_{item['id']}", checked=bool(item['is_checked']), size=10)
+                    indent_val = 15 if item.get('parent_id') else 0
+                    name_cell = InteractiveTextField(f"name_{item['id']}", value=item['item_name'], width=140, height=14, indent=indent_val)
+                    qty_cell = InteractiveTextField(f"qty_{item['id']}", value=str(item['quantity']), width=35, height=14)
+                    prio_cell = InteractiveChoiceField(f"prio_{item['id']}", value=item['priority'] or 'Medium', width=50, height=14)
+                    desc = item['description'] or ""
+                    desc_cell = InteractiveTextField(f"desc_{item['id']}", value=desc, width=254, height=14)
+
+                    table_data.append([
+                        status_box,
+                        name_cell,
+                        qty_cell,
+                        prio_cell,
+                        desc_cell
+                    ])
+
+            if printer_friendly:
+                t = Table(table_data, colWidths=[40, 160, 35, 50, 219])
+            else:
+                t = Table(table_data, colWidths=[25, 140, 35, 50, 254])
 
             # Table styles
             t_style = [
-                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
                 ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
                 ('TOPPADDING', (0, 0), (-1, -1), 6),
             ]
             if printer_friendly:
+                t_style.append(('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey))
                 t_style.append(('LINEBELOW', (0, 0), (-1, -1), 0.5, colors.black))
             else:
+                t_style.append(('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#FAF8F5")))
                 t_style.append(('LINEBELOW', (0, 0), (-1, -1), 0.5, border_color))
 
             t.setStyle(TableStyle(t_style))
