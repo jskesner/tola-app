@@ -18,10 +18,10 @@ function formatMarkdown(text) {
     // Helper to replace inline styles (bold, italics)
     function replaceInline(str) {
         return str
-            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-            .replace(/__(.*?)__/g, '<strong>$1</strong>')
-            .replace(/\*(.*?)\*/g, '<em>$1</em>')
-            .replace(/_(.*?)_/g, '<em>$1</em>');
+            .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+            .replace(/__([^_]+)__/g, '<strong>$1</strong>')
+            .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+            .replace(/_([^_]+)_/g, '<em>$1</em>');
     }
 
     const lines = escaped.split('\n');
@@ -1105,8 +1105,8 @@ function getItemImageUrl(itemName, category, isPrivate) {
 
     // Clean name: strip " for [Traveler]" suffix, parentheses, brackets, and possessives
     let cleanName = itemName;
-    cleanName = cleanName.replace(/\(.*?\)/g, '').trim();
-    cleanName = cleanName.replace(/\[.*?\]/g, '').trim();
+    cleanName = cleanName.replace(/\([^)]*\)/g, '').trim();
+    cleanName = cleanName.replace(/\[[^\]]*\]/g, '').trim();
     cleanName = cleanName.replace(/\b[a-z0-9]+\'s\b/gi, '').trim();
     cleanName = cleanName.replace(/\s+for\s+.+$/i, '').trim();
 
