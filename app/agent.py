@@ -575,15 +575,43 @@ def run_agent_sync(agent: Agent, prompt: str) -> str:
     raise last_error
 
 
+# Helper to robustly parse preference tags (JSON array or comma-separated string)
+def parse_preference_tags(pref_tags_str: str or None) -> list[str]:
+    if not pref_tags_str:
+        return []
+    pref_tags_str = pref_tags_str.strip()
+    try:
+        t_pref = json.loads(pref_tags_str)
+        if isinstance(t_pref, list):
+            return [str(p).strip().lower() for p in t_pref]
+        return [str(t_pref).strip().lower()]
+    except Exception:
+        return [x.strip().lower() for x in pref_tags_str.split(",") if x.strip()]
+
+
 def is_gender_appropriate(item_name: str, traveler_name: str, traveler_profiles_map: dict) -> bool:
     """Returns True if the item is gender-appropriate for the traveler, False otherwise."""
-    profile = traveler_profiles_map.get(traveler_name.lower())
+    profile = None
+    if traveler_name:
+        profile = traveler_profiles_map.get(traveler_name.lower())
+    
+    # Fallback to the single traveler profile if none specified
+    if not profile and len(traveler_profiles_map) == 1:
+        profile = list(traveler_profiles_map.values())[0]
+
     if not profile:
         return True
+
     t_pref = profile["pref"]
     name_lower = item_name.lower()
-    is_masc_item = any(k in name_lower for k in ["masculine", "men's", "mens", "blazer", "suit", "tuxedo"])
-    is_fem_item = any(k in name_lower for k in ["feminine", "women's", "womens", "blouse", "dress", "skirt", "makeup", "styling", "cover-up", "coverup", "heels", "lingerie", "bikini", "purse", "shawl", "wrap", "sundress", "romper"])
+    is_masc_item = any(k in name_lower for k in ["masculine", "men's", "mens", "blazer", "suit", "tuxedo", "male", "boys", "boy's", "guys", "guy's"])
+    is_fem_item = any(k in name_lower for k in [
+        "feminine", "women's", "womens", "blouse", "dress", "skirt", "makeup", "styling", 
+        "cover-up", "coverup", "heels", "lingerie", "bikini", "purse", "shawl", "wrap", 
+        "sundress", "romper", "female", "girls", "girl's", "ladies", "lady's", "bra", 
+        "tights", "stockings", "flats", "mascara", "lipstick",
+        "scrunchie", "scrunchies", "hairpin", "hairpins"
+    ])
     has_masc_pref = any(p in t_pref for p in ["masculine-wear", "masculine"])
     has_fem_pref = any(p in t_pref for p in ["feminine-wear", "feminine"])
     has_unisex_pref = any(p in t_pref for p in ["unisex-wear", "unisex"])
@@ -708,10 +736,7 @@ def generate_dynamic_clothing(
 
     traveler_profiles_map = {}
     for r in travelers_rows:
-        try:
-            t_pref = json.loads(r["preference_tags"])
-        except Exception:
-            t_pref = []
+        t_pref = parse_preference_tags(r["preference_tags"])
         traveler_profiles_map[r["name"].lower()] = {
             "demo": r["demographic_category"],
             "pref": t_pref
@@ -726,22 +751,15 @@ def generate_dynamic_clothing(
     # Derive combined tags list from individual traveler profiles
     all_prefs = set()
     for r in travelers_rows:
-        try:
-            t_pref = json.loads(r["preference_tags"])
-            if isinstance(t_pref, list):
-                all_prefs.update(t_pref)
-        except Exception:
-            pass
+        t_pref = parse_preference_tags(r["preference_tags"])
+        all_prefs.update(t_pref)
     tags_str = ", ".join(all_prefs) if all_prefs else "none"
 
     traveler_info_list = []
     for r in travelers_rows:
         t_name = r["name"]
         t_demo = r["demographic_category"]
-        try:
-            t_pref = json.loads(r["preference_tags"])
-        except Exception:
-            t_pref = []
+        t_pref = parse_preference_tags(r["preference_tags"])
         traveler_info_list.append(f"- {t_name} (Demographic: {t_demo}, Style Preferences: {', '.join(t_pref) if t_pref else 'none'})")
     travelers_profiles_str = "\n".join(traveler_info_list) if traveler_info_list else ""
 
@@ -1149,22 +1167,29 @@ def insert_packing_item_safely(cursor, trip_id, item_name, quantity, category, p
 
     # 1. Demographic adjustments & appropriateness check
     demographic = "adult"
-    if traveler_name:
-        cursor.execute("SELECT demographic_category, preference_tags FROM travelers WHERE trip_id = ? AND LOWER(name) = LOWER(?)", (trip_id, traveler_name))
+    t_pref = []
+    
+    check_traveler = traveler_name
+    if not check_traveler and len(t_names) == 1:
+        check_traveler = t_names[0]
+
+    if check_traveler:
+        cursor.execute("SELECT demographic_category, preference_tags FROM travelers WHERE trip_id = ? AND LOWER(name) = LOWER(?)", (trip_id, check_traveler))
         row = cursor.fetchone()
         if row:
             demographic = (row["demographic_category"] or "adult").lower()
             pref_tags_str = row["preference_tags"] or "[]"
-            try:
-                t_pref = json.loads(pref_tags_str)
-                if not isinstance(t_pref, list):
-                    t_pref = [t_pref]
-            except Exception:
-                t_pref = [x.strip() for x in pref_tags_str.split(",") if x.strip()]
+            t_pref = parse_preference_tags(pref_tags_str)
 
             # Gender/Style appropriateness check
-            is_masc_item = any(k in base_name_lower for k in ["masculine", "men's", "mens", "blazer", "suit", "tuxedo"])
-            is_fem_item = any(k in base_name_lower for k in ["feminine", "women's", "womens", "blouse", "dress", "skirt", "makeup", "styling", "cover-up", "coverup", "heels", "lingerie", "bikini", "purse", "shawl", "wrap", "sundress", "romper"])
+            is_masc_item = any(k in base_name_lower for k in ["masculine", "men's", "mens", "blazer", "suit", "tuxedo", "male", "boys", "boy's", "guys", "guy's"])
+            is_fem_item = any(k in base_name_lower for k in [
+                "feminine", "women's", "womens", "blouse", "dress", "skirt", "makeup", "styling", 
+                "cover-up", "coverup", "heels", "lingerie", "bikini", "purse", "shawl", "wrap", 
+                "sundress", "romper", "female", "girls", "girl's", "ladies", "lady's", "bra", 
+                "tights", "stockings", "flats", "mascara", "lipstick",
+                "scrunchie", "scrunchies", "hairpin", "hairpins"
+            ])
             has_masc_pref = any(p in t_pref for p in ["masculine-wear", "masculine"])
             has_fem_pref = any(p in t_pref for p in ["feminine-wear", "feminine"])
             has_unisex_pref = any(p in t_pref for p in ["unisex-wear", "unisex"])
@@ -1174,21 +1199,22 @@ def insert_packing_item_safely(cursor, trip_id, item_name, quantity, category, p
             if is_fem_item and (has_masc_pref or has_unisex_pref) and not has_fem_pref:
                 return 0
 
-            if demographic == "infant":
-                if any(k in base_name_lower for k in ["shoes", "sneakers", "boots", "footwear", "sandals", "flip flops", "booties"]):
-                    base_name = "Baby Booties"
-                elif any(k in base_name_lower for k in ["pants", "jeans", "shorts", "leggings", "trousers", "bottoms"]):
-                    base_name = "Baby Leggings"
-                elif "socks" in base_name_lower:
-                    base_name = "Baby Socks"
-                elif any(k in base_name_lower for k in ["t-shirt", "tshirt", "shirt", "top", "blouse", "dress", "outfit", "clothing", "sweater", "jacket", "coat", "hoodie", "cardigan"]):
-                    base_name = "Baby Onesies / Outfits"
-                elif "underwear" in base_name_lower:
-                    return 0  # Block underwear for infants (diapers are generated statically)
-            
-            base_name_lower = base_name.lower()
-            if not is_demographic_appropriate(f"{base_name}{traveler_suffix}", demographic):
-                return 0
+            if traveler_name or len(t_names) == 1:
+                if demographic == "infant":
+                    if any(k in base_name_lower for k in ["shoes", "sneakers", "boots", "footwear", "sandals", "flip flops", "booties"]):
+                        base_name = "Baby Booties"
+                    elif any(k in base_name_lower for k in ["pants", "jeans", "shorts", "leggings", "trousers", "bottoms"]):
+                        base_name = "Baby Leggings"
+                    elif "socks" in base_name_lower:
+                        base_name = "Baby Socks"
+                    elif any(k in base_name_lower for k in ["t-shirt", "tshirt", "shirt", "top", "blouse", "dress", "outfit", "clothing", "sweater", "jacket", "coat", "hoodie", "cardigan"]):
+                        base_name = "Baby Onesies / Outfits"
+                    elif "underwear" in base_name_lower:
+                        return 0  # Block underwear for infants (diapers are generated statically)
+                
+                base_name_lower = base_name.lower()
+                if not is_demographic_appropriate(f"{base_name}{traveler_suffix}", demographic):
+                    return 0
     else:
         baby_keywords = [
             "baby", "infant", "toddler", "onesie", "onesies", "diaper", "diapers",
@@ -1510,11 +1536,7 @@ def apply_accessibility_and_medications(trip_id: str, username: str, group_size:
                     pass
                 t_demo = r["demographic_category"].lower()
                 label_suffix = f" for {t_name}" if len(travelers_rows) > 1 else ""
-                try:
-                    t_pref = json.loads(r["preference_tags"])
-                except Exception:
-                    t_pref = []
-                t_pref_lower = [tag.lower() for tag in t_pref]
+                t_pref_lower = parse_preference_tags(r["preference_tags"])
                 try:
                     t_meds = json.loads(r["medications"])
                 except Exception:
@@ -2151,14 +2173,10 @@ def generate_deterministic_power_and_passport_compliance(trip_id: str) -> int:
                 travelers_prefs = cursor.fetchall()
                 has_styling_pref = False
                 for pref_row in travelers_prefs:
-                    try:
-                        prefs = json.loads(pref_row["preference_tags"])
-                        prefs_lower = [p.lower() for p in prefs]
-                        if any(tag in prefs_lower for tag in ["hair-styling", "hair-care", "shaving", "shaving-kit", "dental-care"]):
-                            has_styling_pref = True
-                            break
-                    except Exception:
-                        pass
+                    prefs_lower = parse_preference_tags(pref_row["preference_tags"])
+                    if any(tag in prefs_lower for tag in ["hair-styling", "hair-care", "shaving", "shaving-kit", "dental-care"]):
+                        has_styling_pref = True
+                        break
 
                 if styling_items_count > 0 or has_styling_pref:
                     for t_name in travelers_names_list:
@@ -2280,10 +2298,7 @@ def generate_activity_specific_packing(trip_id: str, activities_json: str) -> st
 
     traveler_profiles_map = {}
     for r in travelers_rows:
-        try:
-            t_pref = json.loads(r["preference_tags"])
-        except Exception:
-            t_pref = []
+        t_pref = parse_preference_tags(r["preference_tags"])
         traveler_profiles_map[r["name"].lower()] = {
             "demo": r["demographic_category"],
             "pref": t_pref
