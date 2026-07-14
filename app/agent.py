@@ -336,7 +336,7 @@ def web_weather_search(location: str) -> str:
         )
 
 def web_search(query: str) -> dict:
-    """Performs a Google Search web query to research destinations, typical seasonal climate, rules, visa requirements, or local advice.
+    """Performs a Tavily Search web query to research destinations, typical seasonal climate, rules, visa requirements, or local advice.
 
     Args:
         query: The search query string.
@@ -345,18 +345,10 @@ def web_search(query: str) -> dict:
         A dictionary with 'status' and 'results' or 'message'.
     """
     try:
-        from google.genai import Client
-        from google.genai import types as genai_types
-        client = Client()
-        response = generate_content_with_retry(
-            client=client,
-            model="gemini-2.5-flash",
-            contents=query,
-            config=genai_types.GenerateContentConfig(
-                tools=[genai_types.Tool(google_search=genai_types.GoogleSearch())]
-            )
-        )
-        return {"status": "success", "results": response.text or ""}
+        from app.app_utils.tavily_mcp import TavilyMCPManager
+        manager = TavilyMCPManager()
+        results = manager.search(query)
+        return {"status": "success", "results": results}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
@@ -366,29 +358,29 @@ def web_search(query: str) -> dict:
 destination_analyzer = Agent(
     name="DestinationAnalyzer",
     model=Gemini(
-        model="gemini-2.5-flash",
+        model="gemini-3.1-flash",
         retry_options=types.HttpRetryOptions(attempts=3),
     ),
     instruction="""You are the DestinationAnalyzer Agent.
-    Your job is to research and analyze destination locations using Google Search and return
+    Your job is to research and analyze destination locations using Tavily Search and return
     crucial details that inform packing decisions. For every destination you analyze, search for:
     - Current terrain, geography, and elevation profile
     - Typical seasonal climate conditions and recent weather patterns
     - Local rules, cultural dress codes, and entry requirements (e.g. temple dress codes, national park rules)
     - Activity-specific conditions (e.g. trail difficulty, recommended gear for local hikes)
     - Any destination-specific advisories or safety notes relevant to travelers
-    Use Google Search to gather real, up-to-date information rather than relying solely on training data.
+    Use Tavily Search to gather real, up-to-date information rather than relying solely on training data.
     Synthesize your findings into a concise, actionable summary that other agents can use to make
     tailored packing recommendations. Be specific — generic summaries are not useful.
     """,
-    description="Researches destinations via Google Search to provide geographic, climate, terrain, and local rule details.",
+    description="Researches destinations via Tavily Search to provide geographic, climate, terrain, and local rule details.",
     tools=[web_search]
 )
 
 activity_gear_planner = Agent(
     name="ActivityGearPlanner",
     model=Gemini(
-        model="gemini-2.5-flash",
+        model="gemini-3.1-flash",
         retry_options=types.HttpRetryOptions(attempts=3),
     ),
     instruction="""You are the ActivityGearPlanner Agent.
@@ -405,7 +397,7 @@ activity_gear_planner = Agent(
 group_health_profiler = Agent(
     name="GroupHealthProfiler",
     model=Gemini(
-        model="gemini-2.5-flash",
+        model="gemini-3.1-flash",
         retry_options=types.HttpRetryOptions(attempts=3),
     ),
     instruction="""You are the GroupHealthProfiler Agent.
@@ -415,7 +407,7 @@ group_health_profiler = Agent(
 
     You must use the classify_medication_phi_safe tool to obtain the generic drug classification locally
     for any traveler prescriptions. NEVER search using a specific or brand drug name.
-    You also use Google Search to look up prescription medication import laws and drug regulations
+    You also use Tavily Search to look up prescription medication import laws and drug regulations
     for the destination country. IMPORTANT PHI SAFETY RULE: You must NEVER search using the
     traveler's actual drug name, dosage, or any personal prescription details. You will only ever
     search using the generic drug classification provided to you (e.g. "opioid analgesic import
@@ -431,7 +423,7 @@ group_health_profiler = Agent(
 packing_task_generator = Agent(
     name="PackingTaskGenerator",
     model=Gemini(
-        model="gemini-2.5-flash",
+        model="gemini-3.1-flash",
         retry_options=types.HttpRetryOptions(attempts=3),
     ),
     instruction="""You are the PackingTaskGenerator Agent.
@@ -457,7 +449,7 @@ packing_task_generator = Agent(
 
     3. PRACTICAL LOGISTICS & COMPLIANCE — tasks that apply to the whole trip:
        e.g. travel insurance, currency exchange, international data plan/SIM card.
-       - VISA & PASSPORT COMPLIANCE: If a destination country is different from the traveler's origin country, generate a high-priority task to check validity: "Verify passport validity and visa requirements for entering [Destination Country]".
+       - VISA & PASSPORT COMPLIANCE: If a destination country is different from the traveler's origin country, generate a high-priority task to check validity: "Verify passport validity and visa requirements for entering [Destination Country]". You MUST query `lookup_visa_requirements` separately for each destination country in the trip if there are multiple stops in different countries. Do not bundle them or query only the first stop. Generate separate passport/visa check tasks for each unique destination country visited (e.g. "Verify passport validity and visa requirements for entering France" and "Verify passport validity and visa requirements for entering United Kingdom").
 
     Return ONLY a JSON array inside a code block with no other text.
     Each task must have:
@@ -471,7 +463,7 @@ packing_task_generator = Agent(
 onboarding_wizard = Agent(
     name="OnboardingWizard",
     model=Gemini(
-        model="gemini-2.5-flash-lite",
+        model="gemini-3.1-flash-lite",
         retry_options=types.HttpRetryOptions(attempts=3),
     ),
     instruction="""You are the OnboardingWizard Agent.
@@ -2457,7 +2449,7 @@ def generate_activity_specific_packing(trip_id: str, activities_json: str) -> st
 root_agent = Agent(
     name="root_agent",
     model=Gemini(
-        model="gemini-2.5-flash",
+        model="gemini-3.1-flash",
         retry_options=types.HttpRetryOptions(attempts=3),
     ),
     instruction="""You are an Organic Neutral themed Collaborative Travel AI Copilot.

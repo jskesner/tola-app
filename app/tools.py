@@ -310,7 +310,24 @@ def lookup_visa_requirements(origin_country: str, destination_country: str) -> s
 
 
 def get_country_for_location(loc: str) -> str:
-    loc_lower = loc.lower().strip()
+    class KeywordMatcher:
+        def __init__(self, text: str):
+            self.text = text
+            import re
+            self.tokens = set(re.findall(r'[a-z0-9]+', text))
+        
+        def __contains__(self, kw: str) -> bool:
+            kw = kw.strip()
+            if not kw:
+                return False
+            if ' ' in kw:
+                import re
+                pattern = r'\b' + re.escape(kw) + r'\b'
+                return bool(re.search(pattern, self.text))
+            else:
+                return kw in self.tokens
+
+    loc_lower = KeywordMatcher(loc.lower().strip())
 
     # Japan
     if any(x in loc_lower for x in ["tokyo", "japan", "fuji", "hakone", "kyoto", "osaka", "hiroshima",
@@ -630,7 +647,7 @@ def get_country_for_location(loc: str) -> str:
         from google.genai import Client
         client = Client()
         response = client.models.generate_content(
-            model="gemini-2.5-flash-lite",
+            model="gemini-3.1-flash-lite",
             contents=f"What country is the travel destination '{loc}' located in? Return ONLY the clean, standard country name."
         )
         resolved = response.text.strip().replace(".", "")

@@ -176,12 +176,30 @@ async function selectActiveTripUI() {
 
     updateLockUI();
     renderPackingList();
+    loadCopilotChatHistory(trip.trip_id);
 
     if (trip.theme) {
         changeTheme(trip.theme);
     }
 
     document.getElementById('btnToggleLock').style.display = 'inline-block';
+}
+
+async function loadCopilotChatHistory(tripId) {
+    const container = document.getElementById('copilotChatMessages');
+    if (!container) return;
+    container.innerHTML = '';
+    try {
+        const res = await fetch(`/api/copilot/history?trip_id=${tripId}`);
+        if (res.ok) {
+            const history = await res.json();
+            history.forEach(msg => {
+                appendCopilotMessage(msg.role, msg.text);
+            });
+        }
+    } catch (err) {
+        console.error("Error loading copilot history:", err);
+    }
 }
 
 function changeActiveTrip(tripId) {
@@ -975,6 +993,10 @@ async function handleSendCopilotMessage(e) {
         if (res.ok) {
             const data = await res.json();
             appendCopilotMessage("copilot", data.reply);
+            
+            // Always refresh packing list display to capture any added/modified/deleted items
+            await renderPackingList();
+
             if (data.regenerated) {
                 await loadTrips();
                 await selectActiveTripUI();

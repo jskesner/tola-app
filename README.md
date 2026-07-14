@@ -14,7 +14,7 @@ flowchart TD
     OnboardingWizard -->|"Coordinative Plan"| DestinationAnalyzer["DestinationAnalyzer Agent"]
     DestinationAnalyzer -->|"Climate and Geography"| ActivityGearPlanner["ActivityGearPlanner Agent"]
     ActivityGearPlanner -->|"Activity-Aware Gear Plan"| GroupHealthProfiler["GroupHealthProfiler Agent"]
-    GroupHealthProfiler <-->|"Obfuscated Classifications"| GoogleSearch["Google Search Tool"]
+    GroupHealthProfiler <-->|"Obfuscated Classifications"| TavilySearch["Tavily Search Tool"]
     GroupHealthProfiler -->|"Private/Medical Compliance"| PackingTaskGenerator["PackingTaskGenerator Agent"]
     PackingTaskGenerator -->|"Lodging, Reservations Tasks"| ComplianceEngine["Deterministic Compliance (Power, Passports, Vaccines)"]
     ComplianceEngine -->|"Unification & De-duplication"| Database[("SQLite Database (WAL Mode)")]
@@ -50,7 +50,7 @@ The packing checklist creation begins with an interactive, friendly interview co
 
 ### 2. Sequential Multi-Agent Onboarding Flow
 When the trip is initialized, the **OnboardingWizard** coordinates a sequential ADK multi-agent planning chain:
-1. **DestinationAnalyzer**: Gathers geographic, climate, terrain, and elevation profile data for each stop using Google Search.
+1. **DestinationAnalyzer**: Gathers geographic, climate, terrain, and elevation profile data for each stop using Tavily Search (via remote MCP server).
 2. **ActivityGearPlanner**: Proposes dynamic clothing and gear recommendations based on planned activities, altitude, and weather conditions.
 3. **GroupHealthProfiler**: Evaluates health needs (allergies, medical devices) and researches prescription import rules.
 4. **PackingTaskGenerator**: Translates trip details (such as legs, lodging, activities, visa requirements) into structured preparation tasks.
@@ -62,12 +62,12 @@ flowchart TD
     
     subgraph A2A_Orchestration ["A2A Orchestration Flow"]
         OnboardingWizard -->|"Destination, Dates"| DestinationAnalyzer["DestinationAnalyzer Agent"]
-        DestinationAnalyzer <-->|"Google Search: Climate, Geography, Weather"| GoogleSearch[("Google Search API")]
+        DestinationAnalyzer <-->|"Tavily Search: Climate, Geography, Weather"| TavilySearch[("Tavily MCP Search")]
         
         DestinationAnalyzer -->|"Climate Knowledge, Destinations"| ActivityGearPlanner["ActivityGearPlanner Agent"]
         ActivityGearPlanner -->|"Planned Activities, Weather Grounding"| GroupHealthProfiler["GroupHealthProfiler Agent"]
         
-        GroupHealthProfiler <-->|"Obfuscated Drug Classifications"| GoogleSearch
+        GroupHealthProfiler <-->|"Obfuscated Drug Classifications"| TavilySearch
         ObfuscationNote["DRUG_OBFUSCATION_MAP prevents PHI leak"] -.-> GroupHealthProfiler
         
         GroupHealthProfiler -->|"Medical Needs, Compliance Warnings"| PackingTaskGenerator["PackingTaskGenerator Agent"]
@@ -80,7 +80,7 @@ flowchart TD
 
 ### 3. Grounded Weather Packing Suggestions & Fallback Engine
 * **Primary Path (Dynamic A2A & Hybrid Weather Optimization)**: The server queries the DestinationAnalyzer and ActivityGearPlanner agents to produce context-appropriate, layered clothing items grounded in weather forecasts and activities.
-  * **Hybrid Weather Search**: The system checks if the trip start date is within the 7-day live forecast window. If so, it queries the Open-Meteo API for real-time daily forecasts and passes it to the agents with instructions to bypass Google Search for weather. If the trip falls outside the 7-day window, the Open-Meteo API query is skipped, and the DestinationAnalyzer is instructed to search Google for the target month's typical historical climate averages.
+  * **Hybrid Weather Search**: The system checks if the trip start date is within the 7-day live forecast window. If so, it queries the Open-Meteo API for real-time daily forecasts and passes it to the agents with instructions to bypass Tavily Search for weather. If the trip falls outside the 7-day window, the Open-Meteo API query is skipped, and the DestinationAnalyzer is instructed to search Tavily for the target month's typical historical climate averages.
 * **Fallback Path (Static 7-Tier Rules)**: If the dynamic agent path fails, the system executes a static keyword-matching rules engine covering 7 weather tiers:
   1. *Rain/Mist/Showers/Damp*: Injects Compact Umbrella, Waterproof Rain Jacket, and Quick-Dry clothing.
   2. *Sun/Sunny/Humid*: Injects SPF 50 Sunscreen, UV Sunglasses, and Wide-Brimmed Hat.
@@ -289,10 +289,11 @@ erDiagram
 ## 📋 Deployment Prerequisites
 Before setting up or deploying the application (locally or via Docker), ensure the following prerequisites are met:
 1. **Gemini API Key**: An active Google Gemini API Key. Refer to the [Google AI Studio Quickstart Guide](https://ai.google.dev/gemini-api/docs/quickstart) for instructions on setting up an account and creating your API key.
-2. **Environment File**: A `.env` file containing `GEMINI_API_KEY="..."` positioned in the running directory.
-3. **Data Volume Mount**: Write permissions on the `./data` host directory for the SQLite WAL-mode database file.
-4. **Port Availability**: Port `8000` (or any alternative port selected by the operator) must be open and available on the host machine.
-5. **Runtime Dependencies** (for non-Docker setup):
+2. **Tavily API Key (Optional)**: An API key from [tavily.com](https://tavily.com). If not provided, the application will automatically fall back to the remote keyless search tier.
+3. **Environment File**: A `.env` file containing `GEMINI_API_KEY="..."` and optionally `TAVILY_API_KEY="..."` positioned in the running directory.
+4. **Data Volume Mount**: Write permissions on the `./data` host directory for the SQLite WAL-mode database file.
+5. **Port Availability**: Port `8000` (or any alternative port selected by the operator) must be open and available on the host machine.
+6. **Runtime Dependencies** (for non-Docker setup):
    * **Python**: Version `3.12` or `3.13`
    * **uv**: Astral's package manager ([Install Guide](https://docs.astral.sh/uv/getting-started/installation/))
 
@@ -304,6 +305,8 @@ Before setting up or deploying the application (locally or via Docker), ensure t
 Create a `.env` file in the root directory:
 ```bash
 GEMINI_API_KEY="your-google-ai-studio-api-key"
+# Optional: defaults to remote keyless tier if omitted
+TAVILY_API_KEY="your-tavily-api-key"
 ```
 
 ### 2. Install Dependencies

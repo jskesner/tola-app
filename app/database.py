@@ -112,6 +112,17 @@ def init_db():
     );
     """)
 
+    # Copilot chat history table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS copilot_chat_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        trip_id VARCHAR(50) NOT NULL REFERENCES trips(trip_id) ON DELETE CASCADE,
+        role VARCHAR(20) NOT NULL, -- 'user' or 'copilot'
+        text TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+
     conn.commit()
     conn.close()
 

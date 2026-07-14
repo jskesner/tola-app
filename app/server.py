@@ -28,7 +28,7 @@ if os.path.exists(dotenv_path):
                 key, val = line.split("=", 1)
                 os.environ[key.strip()] = val.strip().strip('"').strip("'")
 
-CHAT_MODEL = "gemini-2.5-flash-lite"
+CHAT_MODEL = "gemini-3.1-flash-lite"
 
 router = APIRouter()
 
@@ -830,6 +830,18 @@ def export_packing_markdown(trip_id: str):
 
 
 
+@router.get("/api/copilot/history")
+def get_copilot_history(trip_id: str):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT role, text FROM copilot_chat_history WHERE trip_id = ? ORDER BY id ASC",
+        (trip_id,)
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return [{"role": r["role"], "text": r["text"]} for r in rows]
+
 class ChatMessage(BaseModel):
     role: str
     text: str
@@ -865,6 +877,14 @@ def copilot_chat(req: CopilotChatRequest):
         context = ""
         conn = get_db_connection()
         cursor = conn.cursor()
+        
+        # Save user message to database history
+        cursor.execute(
+            "INSERT INTO copilot_chat_history (trip_id, role, text) VALUES (?, 'user', ?)",
+            (req.trip_id, scrubbed_message)
+        )
+        conn.commit()
+
         cursor.execute("SELECT * FROM trips WHERE trip_id = ?", (req.trip_id,))
         trip_row = cursor.fetchone()
         if trip_row:
@@ -893,6 +913,22 @@ def copilot_chat(req: CopilotChatRequest):
                     items_ctx += f"- Item: '{r['item_name']}' (Category: '{r['category']}', Qty: {r['quantity']}, Priority: '{r['priority']}', ID: {r['id']}, Parent ID: {r['parent_id'] or 'None'}, Description: '{r['description'] or ''}')\n"
                 items_ctx += "</existing_packing_list>\n"
                 context += items_ctx
+
+            # Fetch previous chat history for context
+            cursor.execute(
+                "SELECT role, text FROM copilot_chat_history WHERE trip_id = ? ORDER BY id ASC",
+                (req.trip_id,)
+            )
+            history_rows = cursor.fetchall()
+            if history_rows:
+                # Exclude the current user message we just inserted (since we append it explicitly below)
+                if len(history_rows) > 1:
+                    history_ctx = "<chat_history>\n"
+                    for hr in history_rows[:-1]:
+                        role_label = "Traveler" if hr["role"] == "user" else "Copilot"
+                        history_ctx += f"{role_label}: {hr['text']}\n"
+                    history_ctx += "</chat_history>\n"
+                    context += history_ctx
         conn.close()
 
         prompt_message = context + f"User Message: {scrubbed_message}"
@@ -1085,6 +1121,17 @@ def copilot_chat(req: CopilotChatRequest):
                         )
 
             reply = response.text or "I have successfully processed your request."
+            
+            # Save copilot reply to database history
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO copilot_chat_history (trip_id, role, text) VALUES (?, 'copilot', ?)",
+                (req.trip_id, reply)
+            )
+            conn.commit()
+            conn.close()
+
             return {"reply": reply, "regenerated": was_regenerated}
         except Exception as e:
             print(f"Error in copilot chat (Active Trip Mode): {e}")
@@ -1170,6 +1217,9 @@ For any traveler (the main user or additional group travelers), translate their 
   * Menstrual hygiene: `menstrual-care`
 
 Rules:
+- You MUST gather the details one-by-one or in small, logical steps. Never group multiple unrelated questions together (e.g. do not ask for origin country, travel dates, medications, and activities in a single response).
+- For each traveler in the group, ask individual, targeted follow-up questions to determine their specific clothing styles, shaving preferences, skincare/makeup needs, vision correction, or mobility needs rather than assuming or grouping them together.
+- Ask exactly one or two questions per turn. Keep the conversation extremely conversational and friendly. Wait for the user's response before proceeding to the next set of details.
 - Be concise in your individual responses. Ask for one or two details at a time so it feels like a natural conversation.
 - Allow for further follow-up questions during the interview to help guide out specifics where it makes sense.
 - Choose exactly one single visual theme (do NOT suggest mixed themes like "sage and stone", choose exactly one from the list below) that matches the destination/activities of the trip:

@@ -31,7 +31,7 @@ def calculate_model_cost(model: str, input_tokens: int, output_tokens: int) -> f
         input_rate = 0.0375
         output_rate = 0.15
     else:
-        # Default to standard gemini-2.5-flash rate
+        # Default to standard gemini-3.1-flash rate
         input_rate = 0.075
         output_rate = 0.30
     return (input_tokens * input_rate + output_tokens * output_rate) / 1_000_000
